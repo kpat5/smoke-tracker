@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/constants/trigger_tag.dart';
+import '../../core/localization_labels.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/utils/formatting.dart';
 import '../../l10n/app_localizations.dart';
@@ -9,6 +11,8 @@ import '../../models/user_profile.dart';
 import '../../state/log_controller.dart';
 import '../../state/mascot_copy.dart';
 import '../../state/user_controller.dart';
+import '../../widgets/edit_number_dialog.dart';
+import '../../widgets/trigger_picker.dart';
 import '../quick_log/log_editor_sheet.dart';
 import 'widgets/animated_mascot.dart';
 import 'widgets/stat_tile.dart';
@@ -19,27 +23,6 @@ import 'widgets/stat_tile.dart';
 /// recent-entries list here.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
-
-  Future<void> _logNow(BuildContext context, WidgetRef ref) async {
-    final l10n = AppLocalizations.of(context);
-    final messenger = ScaffoldMessenger.of(context);
-    final created = await ref.read(logActionsProvider).logCigarette(
-      occurredAt: DateTime.now(),
-      createdVia: CreatedVia.quick,
-    );
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(l10n.snackLogged),
-          action: SnackBarAction(
-            label: l10n.actionUndo,
-            onPressed: () =>
-                ref.read(logActionsProvider).deleteLog(created.logId),
-          ),
-        ),
-      );
-  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -56,12 +39,7 @@ class HomeScreen extends ConsumerWidget {
             final count = logs.length;
             final spend =
                 logs.fold<double>(0, (sum, e) => sum + e.costSnapshot);
-            return _HomeBody(
-              profile: profile,
-              count: count,
-              spend: spend,
-              onLog: () => _logNow(context, ref),
-            );
+            return _HomeBody(profile: profile, count: count, spend: spend);
           },
         ),
       ),
@@ -69,23 +47,88 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-class _HomeBody extends StatelessWidget {
+class _HomeBody extends ConsumerWidget {
   const _HomeBody({
     required this.profile,
     required this.count,
     required this.spend,
-    required this.onLog,
   });
 
   final UserProfile profile;
   final int count;
   final double spend;
-  final VoidCallback onLog;
+
+  Future<void> _logNow(BuildContext context, WidgetRef ref) async {
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final priceOverride = ref.read(quickLogPriceOverrideProvider);
+    final (trigger, customTagLabel) = ref.read(quickLogTriggerProvider);
+    final created = await ref.read(logActionsProvider).logCigarette(
+      occurredAt: DateTime.now(),
+      createdVia: CreatedVia.quick,
+      costOverride: priceOverride,
+      trigger: trigger,
+      customTagLabel: trigger == TriggerTag.custom ? customTagLabel : null,
+    );
+    // The overrides only ever apply to the log they were set for.
+    ref.read(quickLogPriceOverrideProvider.notifier).state = null;
+    ref.read(quickLogTriggerProvider.notifier).state = (TriggerTag.none, null);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(l10n.snackLogged),
+          action: SnackBarAction(
+            label: l10n.actionUndo,
+            onPressed: () =>
+                ref.read(logActionsProvider).deleteLog(created.logId),
+          ),
+        ),
+      );
+  }
+
+  Future<void> _editPrice(
+    BuildContext context,
+    WidgetRef ref,
+    double current,
+  ) async {
+    final l10n = AppLocalizations.of(context);
+    final parsed = await showEditNumberDialog(
+      context,
+      title: l10n.quickLogPriceDialogTitle,
+      initial: current.toString(),
+    );
+    if (parsed != null) {
+      ref.read(quickLogPriceOverrideProvider.notifier).state = parsed;
+    }
+  }
+
+  Future<void> _editTrigger(
+    BuildContext context,
+    WidgetRef ref,
+    TriggerTag current,
+    String? currentCustomLabel,
+  ) async {
+    final result = await showTriggerPickerDialog(
+      context,
+      initial: current,
+      initialCustomLabel: currentCustomLabel,
+    );
+    if (result != null) {
+      ref.read(quickLogTriggerProvider.notifier).state = result;
+    }
+  }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
+    final priceOverride = ref.watch(quickLogPriceOverrideProvider);
+    final price = priceOverride ?? profile.costPerCigarette;
+    final (triggerTag, triggerCustomLabel) = ref.watch(quickLogTriggerProvider);
+    final triggerLabel = triggerTag == TriggerTag.custom
+        ? (triggerCustomLabel ?? triggerTag.label(l10n))
+        : triggerTag.label(l10n);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -144,8 +187,41 @@ class _HomeBody extends StatelessWidget {
                     const Spacer(),
 
                     // Actions anchored near the bottom.
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Flexible(
+                          child: TextButton.icon(
+                            onPressed: () => _editPrice(context, ref, price),
+                            icon: const Icon(Icons.edit_outlined, size: 16),
+                            label: Text(
+                              l10n.quickLogPriceLabel(
+                                Formatting.cost(price, profile.currencySymbol),
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Flexible(
+                          child: TextButton.icon(
+                            onPressed: () => _editTrigger(
+                              context,
+                              ref,
+                              triggerTag,
+                              triggerCustomLabel,
+                            ),
+                            icon: const Icon(Icons.edit_outlined, size: 16),
+                            label: Text(
+                              triggerLabel,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                     ElevatedButton(
-                      onPressed: onLog,
+                      onPressed: () => _logNow(context, ref),
                       child: Text(l10n.ctaJustSmoked),
                     ),
                     Center(

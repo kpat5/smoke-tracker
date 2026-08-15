@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/personality.dart';
@@ -12,6 +11,7 @@ import '../../l10n/app_localizations.dart';
 import '../../models/user_profile.dart';
 import '../../state/user_controller.dart';
 import '../../widgets/app_card.dart';
+import '../../widgets/edit_number_dialog.dart';
 
 /// Settings tab: tracking config, mascot config, data actions, neutral note.
 class SettingsScreen extends ConsumerWidget {
@@ -26,33 +26,8 @@ class SettingsScreen extends ConsumerWidget {
     required String initial,
     required ValueChanged<double> onSubmit,
   }) async {
-    final controller = TextEditingController(text: initial);
-    final l10n = AppLocalizations.of(context);
-    final result = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(l10n.actionCancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: Text(l10n.actionSave),
-          ),
-        ],
-      ),
-    );
-    final parsed = double.tryParse(result ?? '');
+    final parsed =
+        await showEditNumberDialog(context, title: title, initial: initial);
     if (parsed != null) onSubmit(parsed);
   }
 

@@ -13,6 +13,19 @@
   "statSpentTodayLabel": "SPENT TODAY",
   "ctaJustSmoked": "I just smoked",
   "logEarlier": "Log earlier ›",
+  "quickLogPriceLabel": "{price} per cigarette",
+  "@quickLogPriceLabel": {
+    "description": "Tappable price shown above the quick-log button, defaults to the settings price but can be overridden for just the next log",
+    "placeholders": { "price": { "type": "String" } }
+  },
+  "quickLogPriceDialogTitle": "Price for this log",
+  "@quickLogPriceDialogTitle": {
+    "description": "Title of the dialog that overrides the price for only the next quick-logged cigarette"
+  },
+  "quickLogTriggerDialogTitle": "Trigger for this log",
+  "@quickLogTriggerDialogTitle": {
+    "description": "Title of the dialog that sets the trigger for only the next quick-logged cigarette"
+  },
 
   "quickLogTitle": "Log a cigarette",
   "quickLogMoreOptions": "More options",

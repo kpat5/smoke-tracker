@@ -29,6 +29,22 @@ final entriesProvider = FutureProvider.autoDispose<List<LogEntry>>((ref) async {
       .getLogs(from: DateTime(2000), to: end);
 });
 
+/// A one-off price override for the next quick log (e.g. this cigarette was
+/// from a different, pricier pack). Null means "use the profile's default
+/// per-cigarette price". Reset to null right after each quick log — it never
+/// changes the saved settings price, only the entry it was set for.
+final quickLogPriceOverrideProvider = StateProvider.autoDispose<double?>(
+  (ref) => null,
+);
+
+/// One-off trigger for the next quick log — same lifecycle as
+/// [quickLogPriceOverrideProvider]: reset to `(none, null)` right after each
+/// quick log, never changes what future logs default to.
+final quickLogTriggerProvider =
+    StateProvider.autoDispose<(TriggerTag, String?)>(
+  (ref) => (TriggerTag.none, null),
+);
+
 /// Write actions for log entries. Centralizes cost-snapshotting and refreshes
 /// every dependent view (Home, Entries, Stats) after each change.
 class LogActions {
@@ -37,13 +53,16 @@ class LogActions {
   final Ref _ref;
 
   /// Creates a new entry using the current profile to snapshot cost/currency.
-  /// Returns the created entry (used e.g. for an undo affordance).
+  /// Pass [costOverride] to price just this one entry differently (e.g. a
+  /// different brand/pack that day) without touching the saved settings
+  /// price. Returns the created entry (used e.g. for an undo affordance).
   Future<LogEntry> logCigarette({
     required DateTime occurredAt,
     required CreatedVia createdVia,
     TriggerTag trigger = TriggerTag.none,
     String? customTagLabel,
     String? note,
+    double? costOverride,
   }) async {
     final profile = await _ref.read(userProfileProvider.future);
     final entry = LogEntry(
@@ -51,7 +70,7 @@ class LogActions {
       userId: mockUserId,
       occurredAt: occurredAt,
       loggedAt: DateTime.now(),
-      costSnapshot: profile.costPerCigarette,
+      costSnapshot: costOverride ?? profile.costPerCigarette,
       currencySnapshot: profile.currencySymbol,
       triggerTag: trigger,
       customTagLabel: trigger == TriggerTag.custom ? customTagLabel : null,

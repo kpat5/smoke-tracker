@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/trigger_tag.dart';
-import '../../core/localization_labels.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/utils/formatting.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/log_entry.dart';
 import '../../state/log_controller.dart';
+import '../../widgets/trigger_picker.dart';
 
 /// Bottom sheet for creating a backdated entry ("Log earlier") or editing an
 /// existing one. One widget serves both flows: [existing] null ⇒ create.
@@ -179,28 +179,11 @@ class _LogEditorSheetState extends ConsumerState<LogEditorSheet> {
             // Trigger
             Text(l10n.quickLogTriggerLabel, style: theme.textTheme.labelSmall),
             const SizedBox(height: AppSpacing.xs),
-            Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.xs,
-              children: [
-                for (final tag in TriggerTag.selectable)
-                  ChoiceChip(
-                    label: Text(tag.label(l10n)),
-                    selected: _trigger == tag,
-                    onSelected: (_) => setState(() => _trigger = tag),
-                  ),
-              ],
+            TriggerPicker(
+              selected: _trigger,
+              customLabelController: _customLabel,
+              onSelect: (tag) => setState(() => _trigger = tag),
             ),
-            if (_trigger == TriggerTag.custom) ...[
-              const SizedBox(height: AppSpacing.sm),
-              TextField(
-                controller: _customLabel,
-                decoration: InputDecoration(
-                  hintText: l10n.quickLogCustomTagHint,
-                  border: const OutlineInputBorder(),
-                ),
-              ),
-            ],
             const SizedBox(height: AppSpacing.md),
 
             // Note
