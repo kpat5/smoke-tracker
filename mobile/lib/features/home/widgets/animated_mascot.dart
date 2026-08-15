@@ -130,6 +130,7 @@ class _AnimatedMascotState extends State<AnimatedMascot>
                   blinkOpen: blinkOpen,
                   pupilDx: pupilDx,
                   pupilDy: pupilDy,
+                  idleT: _reduceMotion ? 0.0 : _idle.value,
                 ),
               ),
             ),
@@ -155,6 +156,7 @@ class _MascotPainter extends CustomPainter {
     required this.blinkOpen,
     required this.pupilDx,
     required this.pupilDy,
+    required this.idleT,
   });
 
   final MascotExpression expression;
@@ -162,12 +164,30 @@ class _MascotPainter extends CustomPainter {
   final double pupilDx;
   final double pupilDy;
 
+  /// Idle-cycle progress, 0..1 (0 while reduce-motion is on). Drives the
+  /// signature particle and background dust motes as pure functions of time,
+  /// with no spawned/mutable particle state to manage.
+  final double idleT;
+
+  // Fixed seed points for the background dust motes (fractions of `s`).
+  static const List<Offset> _moteSeeds = [
+    Offset(0.10, 0.22),
+    Offset(0.86, 0.18),
+    Offset(0.18, 0.78),
+    Offset(0.90, 0.62),
+    Offset(0.55, 0.08),
+    Offset(0.34, 0.88),
+  ];
+
   @override
   void paint(Canvas canvas, Size size) {
     final s = size.width;
     _drawShadow(canvas, s);
+    _drawDustMotes(canvas, s);
     _drawBody(canvas, s);
+    _drawLimbsAndProps(canvas, s);
     _drawFace(canvas, s);
+    _drawParticle(canvas, s);
   }
 
   void _drawShadow(Canvas canvas, double s) {
@@ -184,25 +204,66 @@ class _MascotPainter extends CustomPainter {
     );
   }
 
-  void _drawBody(Canvas canvas, double s) {
-    final bodyRect = Rect.fromLTRB(s * 0.24, s * 0.10, s * 0.76, s * 0.90);
-    final body = RRect.fromRectAndCorners(
-      bodyRect,
-      topLeft: Radius.circular(s * 0.26),
-      topRight: Radius.circular(s * 0.26),
-      bottomLeft: Radius.circular(s * 0.14),
-      bottomRight: Radius.circular(s * 0.14),
-    );
+  void _drawDustMotes(Canvas canvas, double s) {
+    final paint = Paint();
+    for (var i = 0; i < _moteSeeds.length; i++) {
+      final seed = _moteSeeds[i];
+      final phase = idleT * 2 * math.pi + i * 1.7;
+      final dx = seed.dx * s + math.sin(phase) * s * 0.02;
+      final dy = seed.dy * s - ((idleT + i * 0.15) % 1.0) * s * 0.16;
+      final alpha = (0.08 + math.sin(phase) * 0.05).clamp(0.0, 0.16);
+      paint.color = AppColors.textMuted.withValues(alpha: alpha);
+      canvas.drawCircle(Offset(dx, dy), s * 0.006, paint);
+    }
+  }
 
-    // Backpack nub for the Among-Us silhouette (slightly darker).
-    final backpack = RRect.fromRectAndRadius(
-      Rect.fromLTRB(s * 0.70, s * 0.40, s * 0.84, s * 0.70),
-      Radius.circular(s * 0.06),
-    );
-    canvas.drawRRect(
-      backpack,
-      Paint()..color = _shade(expression.bodyColor, -0.12),
-    );
+  /// The blob/slime body silhouette: a rounded top with a wider, tapered
+  /// base, anchored on a waist line so limbs can be placed relative to it.
+  Path _blobPath(double s) {
+    final cx = s * 0.5;
+    final waistY = s * 0.68;
+    const w = 0.58;
+    const h = 0.56;
+    return Path()
+      ..moveTo(cx - s * w / 2, waistY)
+      ..cubicTo(
+        cx - s * w / 2,
+        waistY - s * h * 0.78,
+        cx - s * w * 0.36,
+        waistY - s * h,
+        cx,
+        waistY - s * h,
+      )
+      ..cubicTo(
+        cx + s * w * 0.36,
+        waistY - s * h,
+        cx + s * w / 2,
+        waistY - s * h * 0.78,
+        cx + s * w / 2,
+        waistY,
+      )
+      ..cubicTo(
+        cx + s * w / 2,
+        waistY + s * h * 0.24,
+        cx + s * w * 0.32,
+        waistY + s * h * 0.34,
+        cx,
+        waistY + s * h * 0.34,
+      )
+      ..cubicTo(
+        cx - s * w * 0.32,
+        waistY + s * h * 0.34,
+        cx - s * w / 2,
+        waistY + s * h * 0.24,
+        cx - s * w / 2,
+        waistY,
+      )
+      ..close();
+  }
+
+  void _drawBody(Canvas canvas, double s) {
+    final body = _blobPath(s);
+    final bounds = body.getBounds();
 
     // Body with a soft top-light gradient for a 3D read.
     final gradient = LinearGradient(
@@ -215,15 +276,205 @@ class _MascotPainter extends CustomPainter {
       ],
       stops: const [0, 0.55, 1],
     );
-    canvas.drawRRect(
-      body,
-      Paint()..shader = gradient.createShader(bodyRect),
+    canvas.drawPath(body, Paint()..shader = gradient.createShader(bounds));
+  }
+
+  void _limb(Canvas canvas, Offset a, Offset b, double width, Color color) {
+    canvas.drawLine(
+      a,
+      b,
+      Paint()
+        ..color = color
+        ..strokeWidth = width
+        ..strokeCap = StrokeCap.round,
     );
+  }
+
+  void _paw(
+    Canvas canvas,
+    Offset center,
+    double r,
+    Color color, {
+    double rotation = 0,
+  }) {
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(rotation);
+    canvas.drawOval(
+      Rect.fromCenter(center: Offset.zero, width: r * 2, height: r * 1.2),
+      Paint()..color = color,
+    );
+    canvas.restore();
+  }
+
+  void _drawLimbsAndProps(Canvas canvas, double s) {
+    final limbColor = _shade(expression.bodyColor, -0.18);
+    final pawColor = _shade(expression.bodyColor, -0.10);
+    final width = s * 0.045;
+
+    switch (expression.pose) {
+      case SlimePose.lounging:
+        // One arm propped lazily up and out; legs loosely crossed.
+        _limb(canvas, Offset(s * 0.62, s * 0.34), Offset(s * 0.76, s * 0.20), width, limbColor);
+        _paw(canvas, Offset(s * 0.76, s * 0.20), s * 0.032, pawColor);
+        _paw(canvas, Offset(s * 0.44, s * 0.82), s * 0.045, pawColor, rotation: -0.2);
+        _paw(canvas, Offset(s * 0.57, s * 0.80), s * 0.045, pawColor, rotation: 0.3);
+      case SlimePose.caringHold:
+        // Hands clasped together at chest height.
+        _limb(canvas, Offset(s * 0.36, s * 0.58), Offset(s * 0.48, s * 0.65), width, limbColor);
+        _limb(canvas, Offset(s * 0.64, s * 0.58), Offset(s * 0.52, s * 0.65), width, limbColor);
+        _paw(canvas, Offset(s * 0.50, s * 0.66), s * 0.038, pawColor);
+        _paw(canvas, Offset(s * 0.40, s * 0.82), s * 0.04, pawColor);
+        _paw(canvas, Offset(s * 0.60, s * 0.82), s * 0.04, pawColor);
+      case SlimePose.bouncy:
+        // Arms flung wide, feet planted for a bounce.
+        _limb(canvas, Offset(s * 0.34, s * 0.50), Offset(s * 0.18, s * 0.32), width, limbColor);
+        _limb(canvas, Offset(s * 0.66, s * 0.50), Offset(s * 0.82, s * 0.32), width, limbColor);
+        _paw(canvas, Offset(s * 0.18, s * 0.32), s * 0.036, pawColor);
+        _paw(canvas, Offset(s * 0.82, s * 0.32), s * 0.036, pawColor);
+        _paw(canvas, Offset(s * 0.42, s * 0.83), s * 0.042, pawColor);
+        _paw(canvas, Offset(s * 0.58, s * 0.83), s * 0.042, pawColor);
+      case SlimePose.crossedArms:
+        // Arms crossed tight over the chest, one foot tapping.
+        _limb(canvas, Offset(s * 0.34, s * 0.52), Offset(s * 0.62, s * 0.60), width, limbColor);
+        _limb(canvas, Offset(s * 0.66, s * 0.52), Offset(s * 0.38, s * 0.60), width, limbColor);
+        _paw(canvas, Offset(s * 0.40, s * 0.82), s * 0.042, pawColor, rotation: -0.15);
+        _paw(canvas, Offset(s * 0.59, s * 0.79), s * 0.042, pawColor, rotation: 0.35);
+      case SlimePose.dapper:
+        // One hand behind the back; a monocle over one eye.
+        _limb(canvas, Offset(s * 0.64, s * 0.55), Offset(s * 0.70, s * 0.68), width, limbColor);
+        _paw(canvas, Offset(s * 0.70, s * 0.68), s * 0.034, pawColor);
+        _paw(canvas, Offset(s * 0.44, s * 0.83), s * 0.04, pawColor);
+        _paw(canvas, Offset(s * 0.56, s * 0.83), s * 0.04, pawColor);
+        if (expression.monocle) _drawMonocle(canvas, s);
+    }
+  }
+
+  Offset _rightEyeCenter(double s) => Offset(s * 0.5 + s * 0.115, s * 0.42);
+
+  void _drawMonocle(Canvas canvas, double s) {
+    final center = _rightEyeCenter(s);
+    canvas.drawCircle(
+      center,
+      s * 0.075,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = s * 0.014
+        ..color = AppColors.textPrimary,
+    );
+    canvas.drawLine(
+      Offset(center.dx + s * 0.06, center.dy + s * 0.05),
+      Offset(center.dx + s * 0.10, center.dy + s * 0.15),
+      Paint()
+        ..color = AppColors.textPrimary
+        ..strokeWidth = s * 0.008
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  /// Each persona's signature idle flourish, timed as a pure function of
+  /// [idleT] so no particle list needs to be spawned or retired.
+  void _drawParticle(Canvas canvas, double s) {
+    const start = 0.5;
+    const span = 0.45;
+    if (idleT < start) return;
+    final k = ((idleT - start) / span).clamp(0.0, 1.0);
+    final fade = math.sin(k * math.pi);
+    if (fade <= 0.02) return;
+
+    switch (expression.particle) {
+      case SlimeParticle.shrug:
+        final pos = Offset(s * 0.72, s * 0.28 - k * s * 0.05);
+        final tp = TextPainter(
+          text: TextSpan(
+            text: '…',
+            style: TextStyle(
+              color: AppColors.textMuted.withValues(alpha: fade),
+              fontSize: s * 0.11,
+              fontWeight: FontWeight.w600,
+              height: 1,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        tp.paint(canvas, pos);
+      case SlimeParticle.warmthWisp:
+        final baseX = s * 0.30;
+        final baseY = s * 0.30 - k * s * 0.20;
+        final path = Path()
+          ..moveTo(baseX, baseY + s * 0.06)
+          ..quadraticBezierTo(baseX + s * 0.04, baseY, baseX, baseY - s * 0.05)
+          ..quadraticBezierTo(
+            baseX - s * 0.03,
+            baseY - s * 0.09,
+            baseX + s * 0.01,
+            baseY - s * 0.13,
+          );
+        canvas.drawPath(
+          path,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = s * 0.012
+            ..strokeCap = StrokeCap.round
+            ..color = _shade(
+              expression.bodyColor,
+              0.25,
+            ).withValues(alpha: fade * 0.8),
+        );
+      case SlimeParticle.spark:
+        final center = Offset(s * 0.78, s * 0.24 - k * s * 0.04);
+        final r = s * 0.02 + fade * s * 0.02;
+        final path = Path();
+        for (var i = 0; i < 4; i++) {
+          final ang = i * math.pi / 2;
+          path.lineTo(
+            center.dx + math.cos(ang) * r * 2.1,
+            center.dy + math.sin(ang) * r * 2.1,
+          );
+          path.quadraticBezierTo(
+            center.dx,
+            center.dy,
+            center.dx + math.cos(ang + math.pi / 4) * r * 0.5,
+            center.dy + math.sin(ang + math.pi / 4) * r * 0.5,
+          );
+        }
+        path.close();
+        canvas.drawPath(
+          path,
+          Paint()..color = expression.bodyColor.withValues(alpha: fade),
+        );
+      case SlimeParticle.steamHuff:
+        // A soft cartoon "steaming mad" cue above the head — deliberately
+        // not drawn at the mouth, to avoid any cigarette-smoke association
+        // in a smoking-cessation app.
+        final baseY = s * 0.12 - k * s * 0.10;
+        final mist = _shade(
+          expression.bodyColor,
+          0.28,
+        ).withValues(alpha: fade * 0.5);
+        for (final dx in [-s * 0.05, s * 0.05]) {
+          canvas.drawCircle(
+            Offset(s * 0.5 + dx, baseY),
+            s * 0.02 * (1 - k * 0.4),
+            Paint()..color = mist,
+          );
+        }
+      case SlimeParticle.monocleGlint:
+        final center = _rightEyeCenter(s);
+        canvas.drawLine(
+          Offset(center.dx - s * 0.05 + k * s * 0.10, center.dy - s * 0.05),
+          Offset(center.dx - s * 0.03 + k * s * 0.10, center.dy + s * 0.03),
+          Paint()
+            ..color = Colors.white.withValues(alpha: fade * 0.9)
+            ..strokeWidth = s * 0.012
+            ..strokeCap = StrokeCap.round,
+        );
+    }
   }
 
   void _drawFace(Canvas canvas, double s) {
     final dark = Paint()..color = AppColors.textPrimary;
-    final eyeY = s * 0.44;
+    final eyeY = s * 0.42;
     final eyeDx = s * 0.115;
     final leftEye = Offset(s * 0.5 - eyeDx, eyeY);
     final rightEye = Offset(s * 0.5 + eyeDx, eyeY);
@@ -393,5 +644,6 @@ class _MascotPainter extends CustomPainter {
       old.expression != expression ||
       old.blinkOpen != blinkOpen ||
       old.pupilDx != pupilDx ||
-      old.pupilDy != pupilDy;
+      old.pupilDy != pupilDy ||
+      old.idleT != idleT;
 }

@@ -36,6 +36,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get logEarlier => 'Log earlier ›';
 
   @override
+  String quickLogPriceLabel(String price) {
+    return '$price per cigarette';
+  }
+
+  @override
+  String get quickLogPriceDialogTitle => 'Price for this log';
+
+  @override
+  String get quickLogTriggerDialogTitle => 'Trigger for this log';
+
+  @override
   String get quickLogTitle => 'Log a cigarette';
 
   @override

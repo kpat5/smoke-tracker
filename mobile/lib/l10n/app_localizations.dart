@@ -147,6 +147,24 @@ abstract class AppLocalizations {
   /// **'Log earlier ›'**
   String get logEarlier;
 
+  /// Tappable price shown above the quick-log button, defaults to the settings price but can be overridden for just the next log
+  ///
+  /// In en, this message translates to:
+  /// **'{price} per cigarette'**
+  String quickLogPriceLabel(String price);
+
+  /// Title of the dialog that overrides the price for only the next quick-logged cigarette
+  ///
+  /// In en, this message translates to:
+  /// **'Price for this log'**
+  String get quickLogPriceDialogTitle;
+
+  /// Title of the dialog that sets the trigger for only the next quick-logged cigarette
+  ///
+  /// In en, this message translates to:
+  /// **'Trigger for this log'**
+  String get quickLogTriggerDialogTitle;
+
   /// No description provided for @quickLogTitle.
   ///
   /// In en, this message translates to:
